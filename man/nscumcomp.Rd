@@ -9,7 +9,7 @@
   \method{nscumcomp}{default} (x, retx = TRUE, ncomp,
     omega = rep(1, nrow(x)), k = length(x), nneg = FALSE,
     gamma, center = TRUE, scale. = FALSE, nrestart = 5,
-    em.tol = 0.001, ...)
+    em.tol = 0.01, verbosity = 0, ...)
 
   \method{nscumcomp}{formula} (formula, data = NULL,
     subset, na.action, ...)
@@ -70,6 +70,10 @@
   of every PC magnitude changes less than \code{em.tol}
   between iterations, the EM procedure is asssumed to have
   converged to a local optimum.}
+
+  \item{verbosity}{an integer specifying the verbosity
+  level. Greater values result in more output, the default
+  is to be quiet.}
 
   \item{formula}{a formula with no response variable,
   referring only to numeric variables.}
@@ -146,17 +150,18 @@ library(MASS)
 
 set.seed(1)
 
-# Regular PCA, with tolerance set to return three PCs
+# Regular PCA, with tolerance set to return five PCs
 prc <- prcomp(Boston, tol = 0.35, scale. = TRUE)
 prc
 
-# Sparse cumulative PCA with three components and 15 non-zero loadings
+# Sparse cumulative PCA with five components and 30 non-zero loadings
 # of the rotation matrix. The orthonormality penalty is set to a value which
 # avoids co-linear principal axes. Note that for this example (as in general), 
 # the non-zero loadings are not distributed uniformly over the components.
 scc <- nscumcomp(Boston, ncomp = 5, k = 30, gamma = 1e11, scale. = TRUE)  
 scc
 t(scc$rotation)\%*\%scc$rotation  # quasi-orthogonality of the PAs
+sum(abs(scc$rotation) > 0 )
 
 # Non-negative sparse cumulative PCA
 nscc <- nscumcomp(Boston, ncomp = 5, nneg = TRUE, k = 30, gamma = 1e4, 
@@ -165,7 +170,7 @@ nscc
 t(nscc$rotation)\%*\%nscc$rotation  # quasi-orthogonality of the PAs
 sum(abs(nscc$rotation) > 0 )  # k is only an upper bound
 
-c(sum(prc$sdev), sum(scc$sdev), sum(nscc$sdev))  # cumulative variances
+sapply(list(prc$sdev, scc$sdev, nscc$sdev), sum)  # cumulative variances
 }
 \seealso{
   \code{\link{nsprcomp}}, \code{\link{prcomp}},
