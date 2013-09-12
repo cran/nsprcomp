@@ -1,4 +1,4 @@
-#  Copyright 2012, 2013 Christian Sigg
+#  Copyright 2013 Christian Sigg
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -13,8 +13,13 @@
 #  A copy of the GNU General Public License is available at
 #  http://www.r-project.org/Licenses/
 
-library(MASS)
-library(testthat)
-library(nsprcomp)
-
-test_package("nsprcomp")
+#' Cardinality of Column Vectors
+#' 
+#' Computes the cardinality (the sum of non-zero elements) of each column of 
+#' the matrix \eqn{\mathbf{W}}{W}.
+#' 
+#' @export
+#' @param W a numeric matrix, e.g. the rotation matrix of a sparse PCA analysis
+cardinality <- function(W) {
+    return(colSums(abs(as.matrix(W)) > 0))
+}

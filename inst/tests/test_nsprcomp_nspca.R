@@ -20,16 +20,13 @@ test_that("cardinality", {
     X <- matrix(rnorm(5*5), 5)
     
     nspc.model <- nsprcomp(X, k = 1, nneg = TRUE)
-    card <- colSums(abs(nspc.model$rotation) > 0)
-    expect_true(all(card == 1))
+    expect_true(all(cardinality(nspc.model$rotation) == 1))
     
     nspc.model <- nsprcomp(X, k = 4, nneg = TRUE)
-    card <- colSums(abs(nspc.model$rotation) > 0)
-    expect_true(all(card <= 4))
+    expect_true(all(cardinality(nspc.model$rotation) <= 4))
     
     nspc.model <- nsprcomp(X, k = 1:5, nneg = TRUE)
-    card <- colSums(abs(nspc.model$rotation) > 0)
-    expect_true(all(card <= 1:5))
+    expect_true(all(cardinality(nspc.model$rotation) <= 1:5))
 })
 
 test_that("non-negativity", {
@@ -47,21 +44,7 @@ test_that("deflation", {
     set.seed(1)
     X = matrix(runif(n*d), n)
     
-    nspc <- nsprcomp(X, k = k, nneg = TRUE, rety = TRUE, deflation = "ortho")
-    W <- nspc$rotation
-    Y <- nspc$y
-    for (cc in seq(length(nspc$sdev))) {
-        expect_true(sum(abs(Y%*%W[ ,cc])) < 1e-10)
-    }
-    
-    nspc <- nsprcomp(X, k = k, nneg = TRUE, rety = TRUE, deflation = "Schur")
-    W <- nspc$rotation
-    Y <- nspc$y
-    for (cc in seq(length(nspc$sdev))) {
-        expect_true(sum(abs(Y%*%W[ ,cc])) < 1e-10)
-    }
-    
-    nspc <- nsprcomp(X, k = k, nneg = TRUE, rety = TRUE, deflation = "remove")
+    nspc <- nsprcomp(X, k = k, nneg = TRUE, rety = TRUE)
     W <- nspc$rotation
     Y <- nspc$y
     for (cc in seq(length(nspc$sdev))) {
@@ -69,12 +52,21 @@ test_that("deflation", {
     }
 })
 
-test_that("weighted non-negative sparse PCA approximation error", {
+test_that("reconstruction", {
+    set.seed(1)
+    X <- matrix(runif(5*5), 5)
+    nspc <- nsprcomp(X, k = 3, nneg = TRUE)
+    X_hat <- predict(nspc)%*%ginv(nspc$rotation) + matrix(1,5,1) %*% nspc$center
+    
+    expect_true(norm(X - X_hat, type="F") < 1e-3)
+})
+
+test_that("weighted approximation error", {
     set.seed(1)
     X <- scale(matrix(runif(5*5), 5))
-    nspc <- nsprcomp(X, omega = c(1,1,1,1,5), ncomp = 2, k = 3, nneg = TRUE)
-    X_hat <- nspc$x%*%t(nspc$rotation)
+    nspc <- nsprcomp(X, omega = c(1,1,1,1,5), ncomp = 2, nneg = TRUE, k = 3)
+    X_hat <- predict(nspc)%*%ginv(nspc$rotation)
     
     nrm <- rowSums((X - X_hat)^2)
-    expect_true(which(nrm == min(nrm)) == 5)
+    expect_true(which.min(nrm) == 5)
 })

@@ -18,23 +18,24 @@
 #' 
 #' Performs a constrained PCA-like analysis on the given data matrix,
 #' where non-negativity and/or sparsity constraints are enforced on the principal axes (PAs).
-#' In contrast to regular PCA, where the algorithm sequentially optimizes the PAs
-#' such that the variance of each principal component (PC) is maximal, \code{nscumcomp} 
-#' jointly optimizes the PAs such that the cumulative variance of all PCs is maximal.
-#' Furthermore, only quasi-orthogonality is enforced between PAs, which is especially
-#' useful if the PAs are constrained to lie in the non-negative orthant.
+#' In contrast to regular PCA, which greedily maximises the variance of each 
+#' principal component (PC), \code{nscumcomp} 
+#' jointly optimizes the components such that the cumulative variance of all PCs is maximal.
 #' 
 #' \code{nscumcomp} computes all PCs jointly using expectation-maximization (EM)
-#' iterations. The maximization step is equivalent to minimizing the objective function
+#' iterations. The M-step is equivalent to minimizing the objective function
 #' 
-#' \deqn{\left\Vert \mathbf{X}-\mathbf{Y}\mathbf{W}^{\top}\right\Vert _{F}^{2}+\gamma\left\Vert \mathbf{W}^{\top}\mathbf{W}-\mathbf{I}\right\Vert _{F}^{2}}{norm(X - Y*W^t, "F")^2 + gamma*norm(W^tW - I, "F")^2}
+#' \deqn{\left\Vert \mathbf{X}-\mathbf{Z}\mathbf{W}^{\top}\right\Vert _{F}^{2}+\gamma\left\Vert \mathbf{W}^{\top}\mathbf{W}-\mathbf{I}\right\Vert _{F}^{2}}{norm(X - Z*t(W), "F")^2 + gamma*norm(t(W)*W - I, "F")^2}
 #'  
-#' w.r.t. the rotation matrix W, where \code{gamma} is the Lagrange parameter 
-#' associated with the ortho-normality 
-#' penalty on W. Non-negativity of the loadings is achieved by enforcing a zero lower 
+#' w.r.t. the pseudo-rotation matrix \eqn{\mathbf{W}}{W}, where 
+#' \eqn{\mathbf{Z}=\mathbf{X}\mathbf{W}\left(\mathbf{W}^\top\mathbf{W}\right)^{-1}}{Z=X*W*solve(t(W)*W)} 
+#' is the scores matrix modified to account for the non-orthogonality of 
+#' \eqn{\mathbf{W}}{W}, \eqn{\mathbf{I}}{I} is the identity matrix and 
+#' \code{gamma} is the Lagrange parameter associated with the ortho-normality 
+#' penalty on \eqn{\mathbf{W}}{W}. Non-negativity of the loadings is achieved by enforcing a zero lower 
 #' bound in the L-BFGS-B algorithm used for the minimization of the objective, 
-#' and sparsity is achieved by a subsequent soft 
-#' thresholding of the rotation matrix.
+#' and sparsity is achieved by a subsequent soft thresholding of 
+#' \eqn{\mathbf{W}}{W}.
 #' 
 #' @export nscumcomp
 #' @param x a numeric matrix or data frame which provides the data 
@@ -45,183 +46,224 @@ nscumcomp <- function (x, ...) UseMethod("nscumcomp")
 #' @method nscumcomp default
 #' @S3method nscumcomp default
 #' @rdname nscumcomp
-#' @param retx a logical value indicating whether the principal components
-#' (i.e. \code{x} projected into the principal subspace) should be returned.
-#' @param ncomp an integer indicating the number of principal 
-#'   components to be computed. 
+#' @param retx a logical value indicating whether the principal components,
+#'   i.e. \code{x} projected into the principal subspace, should be returned.
+#' @param ncomp the number of principal components (PCs) 
+#'   to be computed. The default is to compute a full basis for \code{x}.
 #' @param omega a vector with as many entries as there are data samples, to
-#'   perform weighted PCA (analogous to weighted least-squares). The default is an 
-#'   equal weighting of all samples.
-#' @param k an integer specifying an upper bound on the number of non-zero
-#'   loadings of the rotation matrix.
-#' @param nneg a logical value indicating whether the principal axes should be
-#'   constrained to the non-negative orthant.
-#' @param gamma a positive number indicating the penalty on the divergence from 
-#'   orthonormality of the rotation matrix. A too small value for \code{gamma}
-#'   results in co-linear PAs and produces an error.
+#'   perform weighted PCA (analogous to weighted least-squares regression). 
+#'   The default is an equal weighting of all samples.
+#' @param k an upper bound on the total number of non-zero
+#'   loadings of the pseudo-rotation matrix. \code{k} is increased if necessary to ensure
+#'   at least one non-zero coefficient per principal axis.
+#' @param nneg a logical value indicating whether the loadings should be 
+#'   non-negative, i.e. the PAs should be constrained to the non-negative orthant.
+#' @param gamma a non-negative penalty on the divergence from 
+#'   orthonormality of the pseudo-rotation matrix. The default is not to penalize,
+#'   but a positive value is sometimes necessary to avoid PAs collapsing onto
+#'   each other.
 #' @param center a logical value indicating whether the empirical mean of \code{x}
-#'   should be subtracted. Alternately, a vector of
+#'   should be subtracted. Alternatively, a vector of
 #'   length equal the number of columns of \code{x} can be supplied.
 #'   The value is passed to \code{\link{scale}}.
 #' @param scale. a logical value indicating whether the columns of \code{x} should
 #'   be scaled to have unit variance before the analysis takes
-#'   place. The default is \code{FALSE} for consistency with \code{nsprcomp}, but
-#'   in general scaling is advisable.  Alternatively, a vector of length
+#'   place. The default is \code{FALSE} for consistency with \code{prcomp}.  
+#'   Alternatively, a vector of length
 #'   equal the number of columns of \code{x} can be supplied.  The
 #'   value is passed to \code{\link{scale}}.
-#' @param nrestart an integer indicating the number of random restarts for computing
-#'   the principal component via EM iterations. The solution 
-#'   achieving maximum cumulative variance over all random restarts is kept. A 
-#'   value greater than one can help to avoid bad local optima.
-#' @param em.tol a lower bound on the minimum relative change of standard deviation, 
-#'   used as the stopping criterion for the EM iterations. If the relative change
-#'   of every PC magnitude changes less than \code{em.tol} between iterations, 
+#' @param nrestart the number of random restarts for computing
+#'   the pseudo-rotation matrix via expectation-maximization (EM) iterations. The solution 
+#'   achieving the minimum of the objective function over all random restarts is kept. A 
+#'   value greater than one can help to avoid bad local minima.
+#' @param em_tol If the relative change
+#'   of the objective is less than \code{em_tol} between iterations, 
 #'   the EM procedure is asssumed to have converged to a local optimum.
+#' @param em_maxiter the maximum number of EM iterations to be performed. The
+#'   EM procedure is terminated if either the \code{em_tol} or the \code{em_maxiter}
+#'   criterion is satisfied.
 #' @param verbosity an integer specifying the verbosity level. Greater values
 #'   result in more output, the default is to be quiet.
 #' 
 #' @return \code{nscumcomp} returns a list with class \code{(nsprcomp, prcomp)}
 #' containing the following elements:
-#' \item{sdev}{the standard deviations of the principal components.}
-#' \item{rotation}{the matrix of non-negative and/or sparse variable loadings, 
-#'   i.e. a matrix whose columns contain the principal axes.}
-#' \item{x}{if \code{retx} is \code{TRUE} the principal components, i.e. the 
-#'   data projected into the principal subspace (after centering and scaling 
-#'   if requested). For the formula method, \code{\link{napredict}()} is applied 
+#' \item{sdev}{the additional standard deviation explained by each component,
+#'   see \code{\link{asdev}}.}
+#' \item{rotation}{the matrix of non-negative and/or sparse loadings, 
+#'   containing the principal axes as columns.}
+#' \item{x}{the scores matrix \eqn{\mathbf{XW}}{X*W} containing the 
+#'   principal components as columns (after centering and scaling 
+#'   if requested). For the formula method, \code{\link{napredict}} is applied 
 #'   to handle the treatment of values omitted by the \code{na.action}.}
 #' \item{center, scale}{the centering and scaling used, or \code{FALSE}.}
 #' 
 #' The components are returned in order of decreasing variance for convenience.
 #'   
-#' @seealso \code{\link{nsprcomp}}, \code{\link{prcomp}}, \code{\link{scale}}
+#' @seealso \code{\link{asdev}},  \code{\link{peav}}, \code{\link{nsprcomp}}, 
+#'   \code{\link{scale}}
 #' 
 #' @example inst/nscumcomp_examples.R
 nscumcomp.default <-
-    function(x, retx = TRUE, ncomp, 
+    function(x, retx = TRUE, ncomp = min(dim(x)), 
              omega = rep(1, nrow(x)),
-             k = length(x), nneg = FALSE, gamma,
+             k = d*ncomp, nneg = FALSE, gamma = 0,
              center = TRUE, scale. = FALSE,
-             nrestart = 5, em.tol = 1e-2, 
+             nrestart = 5, em_tol = 1e-3, em_maxiter = 20,
              verbosity = 0, ...) 
 {        
-    if (missing(ncomp))
-        stop("'ncomp' needs to be specified.")
-    if (missing(gamma))
-        stop("'gamma' needs to be specified.")
-    
     d <- ncol(x); n <- nrow(x)
     if (k > d*ncomp) {
         k = d*ncomp
     }
     
-    x <- as.matrix(x)
-    x <- scale(x, center = center, scale = scale.)
-    cen <- attr(x, "scaled:center")
-    sc <- attr(x, "scaled:scale")
+    X <- as.matrix(x)
+    X <- scale(X, center = center, scale = scale.)
+    cen <- attr(X, "scaled:center")
+    sc <- attr(X, "scaled:scale")
     if(any(sc == 0))
         stop("cannot rescale a constant/zero column to unit variance")
     
-    cumsdev.opt <- 0
-    cumsdev <- numeric(nrestart)
+    obj_opt <- Inf
     for (rr in seq(nrestart)) {        
-        W <- emcumca(x, omega, ncomp, k, nneg, gamma, em.tol, verbosity)
+        res <- emcumca(X, omega, ncomp, k, nneg, gamma, NULL, em_tol, 
+                       em_maxiter, verbosity)
         
-        # keep solution with maximum cumulative variance
-        x.pc <- x%*%W
-        cumsdev[rr] <- sum(apply(x.pc, 2, sd))
-        if (cumsdev[rr] > cumsdev.opt) {
-            x.pc.opt <- x.pc
-            cumsdev.opt <- cumsdev[rr]
-            W.opt <- W
+        # variational renormalization
+        S <- abs(res$W) > 0  # support of W
+        if (any(!S))
+            res <- emcumca(X, omega, ncomp, k, nneg, gamma, S, em_tol, 
+                           em_maxiter, verbosity)
+        
+        # keep solution with minimum objective
+        if (res$obj < obj_opt) {
+            obj_opt <- res$obj
+            W_opt <- res$W
         }
         if (verbosity > 0) {
-            print(paste("maximal cum. variance is ", format(cumsdev.opt, digits = 4),
+            print(paste("minimum objective is ", format(obj_opt, digits = 4),
                         " at random restart ", rr-1, sep = ""))
         }
     }
     
-    # sort components according to variance
-    sdev = apply(x.pc.opt, 2, sd)
+    # sort components according to their additional variances
+    sdev <- asdev(X, W_opt)
     if (length(sdev) > 1) {
         srt = sort(sdev, decreasing = TRUE, index.return = TRUE)
         sdev = srt$x
-        W.opt <- W.opt[, srt$ix]
-        x.pc <- x.pc[, srt$ix]    
+        W_opt <- W_opt[, srt$ix, drop=FALSE]
     }
     
-    dimnames(W.opt) <-
-        list(colnames(x), paste0("PC", seq_len(ncol(W.opt))))
+    dimnames(W_opt) <-
+        list(colnames(X), paste0("PC", seq_len(ncol(W_opt))))
     
-    r <- list(sdev = sdev, rotation = W.opt,
+    r <- list(sdev = sdev, rotation = W_opt,
               center = if(is.null(cen)) FALSE else cen,
               scale = if(is.null(sc)) FALSE else sc)
-    if (retx) r$x <- x.pc
+    if (retx) r$x <- X %*% W_opt
     class(r) <- c("nsprcomp", "prcomp")
     return(r)
 }
 
-emcumca <- function(X, omega, ncomp, k, nneg, gamma, em.tol, verbosity = 0) {
+emcumca <- function(X, omega, ncomp, k, nneg, gamma, S, em_tol, em_maxiter, 
+                    verbosity) {
     d <- ncol(X); n <- nrow(X)
+    
+    W_init <- function(W_) {  # if S is not null, W_ only contains the elements corresponding to the support
+        if (is.null(S)) {
+            W <- matrix(W_, d, ncomp)
+        } else {
+            W <- matrix(0, d, ncomp)   
+            W[S] <- W_
+        }
+        return(W)
+    }
     
     W <- matrix(rnorm(d*ncomp), d)
     if (nneg) {
         W <- abs(W)
     }
+    if (!is.null(S)) {
+        W[!S] <- 0
+    }
     W <- W/t(matrix(rep(sqrt(colSums(W^2)), d), ncomp))
     
-    sdev.old <- 0
-    repeat {   
-        Y <- tryCatch(X%*%W%*%solve(t(W)%*%W), 
+    obj_old <- Inf
+    ii <- 0
+    while(ii < em_maxiter) {   
+        Z <- tryCatch(X%*%W%*%solve(t(W)%*%W), 
                  error = function(e) {
                      stop("Co-linear principal axes, try increasing the orthonormality penalty 'gamma'.")
                  }
-        )
-        
-        sdev <- apply(Y, 2, sd)
-        if (all(abs(sdev - sdev.old)/sdev < em.tol)) {
-            break
-        }
-        sdev.old <- sdev
-        
-        if (verbosity > 1) {
-            print(paste("cum. variance: ", format(sum(sdev), digits = 4),
-                        " - ortho penalty: ", format(sum((t(W)%*%W - diag(ncomp))^2), digits = 4),
-                        sep = ""
-                        )
-                  )
-        }
+        )  
         
         # objective function
         if (isTRUE(all.equal(omega, rep(1, nrow(X))))) {
-            fn <- function(W) {
-                dim(W) <- c(d, ncomp)
-                return( sum((X-Y%*%t(W))^2) + gamma*sum((t(W)%*%W - diag(ncomp))^2) )
-            }
-            
+            fn <- function(W_) {
+                W <- W_init(W_)
+                obj <- sum((X-Z%*%t(W))^2)
+                if (gamma > 0)
+                    obj <- obj + gamma*sum((t(W)%*%W - diag(ncomp))^2)
+                return(obj)
+            }   
         } else {
-            fn <- function(W) {
-                dim(W) <- c(d, ncomp)
-                return( omega%*%rowSums((X-Y%*%t(W))^2) + gamma*sum((t(W)%*%W - diag(ncomp))^2) )
-            }
-            
+            fn <- function(W_) {
+                W <- W_init(W_)
+                obj <- omega%*%rowSums((X-Z%*%t(W))^2)
+                if (gamma > 0)
+                    obj <- obj + gamma*sum((t(W)%*%W - diag(ncomp))^2)
+                return(obj)
+            }  
         }
         
         # gradient
         if (isTRUE(all.equal(omega, rep(1, nrow(X))))) {
-            tYY <- t(Y)%*%Y
-            tXY <- t(X)%*%Y
-            gr <- function(W) {
-                dim(W) <- c(d, ncomp)
-                return( 2*(W%*%tYY - tXY) + 4*gamma*(W%*%t(W)%*%W - W) )
+            tZZ <- t(Z)%*%Z
+            tXZ <- t(X)%*%Z
+            gr <- function(W_) {
+                W <- W_init(W_)
+                G <- 2*(W%*%tZZ - tXZ)
+                if (gamma > 0)
+                    G <- G + 4*gamma*(W%*%(t(W)%*%W) - W)
+                if (is.null(S)) {
+                    return(G)
+                } else {
+                    return(G[S])
+                }
             }
         } else {
-            OY <- matrix(rep(omega, ncomp), n)*Y
-            tYOY <- t(Y)%*%OY
-            tXOY <- t(X)%*%OY
-            gr <- function(W) {
-                dim(W) <- c(d, ncomp)
-                return( 2*(W%*%tYOY - tXOY) + 4*gamma*(W%*%t(W)%*%W - W) )
+            OZ <- matrix(rep(omega, ncomp), n)*Z
+            tZOZ <- t(Z)%*%OZ
+            tXOZ <- t(X)%*%OZ
+            gr <- function(W_) {
+                W <- W_init(W_)
+                G <- 2*(W%*%tZOZ - tXOZ)
+                if (gamma > 0)
+                    G <- G + 4*gamma*(W%*%(t(W)%*%W) - W)
+                if (is.null(S)) {
+                    return(G)
+                } else {
+                    return(G[S])
+                }
             }
+        }
+        
+        if (is.null(S)) {
+            obj <- fn(W)     
+        } else {
+            obj <- fn(W[S])   
+        }
+        if ((obj == 0) || (abs(obj-obj_old)/obj < em_tol)) {
+            break
+        }
+        obj_old <- obj
+        
+        if (verbosity > 1) {
+            print(paste("approximation error: ", 
+                        format(omega%*%rowSums((X-Z%*%t(W))^2), digits = 4),
+                        " - ortho penalty: ", 
+                        format(sum((t(W)%*%W - diag(ncomp))^2), digits = 4),
+                        sep = "")
+            )
         }
         
         control <- list()
@@ -230,24 +272,37 @@ emcumca <- function(X, omega, ncomp, k, nneg, gamma, em.tol, verbosity = 0) {
         } else {
             control$trace <- 0
         }
-        W.star <- optim(W, fn, gr, method = "L-BFGS-B",
-                        lower = if (nneg) 0 else -Inf, control = control)$par
-        
-        if (k < d*ncomp) {
-            
-            # soft thresholding
-            srt <- sort(abs(W.star), decreasing = TRUE)
-            W <- pmax(abs(W.star) - srt[k+1], 0)*sign(W.star)      
+        if (is.null(S)) {
+            W_star <- optim(W, fn, gr, method = "L-BFGS-B",
+                            lower = if (nneg) 0 else -Inf, control = control)$par    
         } else {
-            W <- W.star
+            W_star <- matrix(0, d, ncomp)
+            W_star[S] <- optim(W[S], fn, gr, method = "L-BFGS-B",
+                            lower = if (nneg) 0 else -Inf, control = control)$par
+        }
+        
+        # soft thresholding
+        if (is.null(S) && (k < d*ncomp)) {        
+            aWstar <- abs(W_star)
+            srt <- sort(aWstar, decreasing = TRUE)
+            
+            # increase k (by decreasing the threshold) if necessary to ensure 
+            # at least one non-zero coefficient remains in each principal axis
+            colmax <- apply(aWstar, 2, max)
+            thr <- min(srt[k+1], 0.999*colmax)
+            W <- pmax(aWstar-thr, 0)*sign(W_star)      
+        } else {
+            W <- W_star
         }
         
         norms <- sqrt(colSums(W^2))
-        if (any(norms == 0))
-            stop("Principal axis is the zero vector, try increasing 'k' or decreasing 'ncomp'.")
         W <- W/t(matrix(rep(norms, d), ncomp))
+        ii <- ii + 1
     }
-    return(W)
+    if ((verbosity > 0) && (ii == em_maxiter))
+        print("maximum number of EM iterations reached before convergence")
+    
+    return(list(W=W, obj=obj))
 }
 
 #' @method nscumcomp formula
@@ -276,7 +331,7 @@ nscumcomp.formula <- function (formula, data = NULL, subset, na.action, ...) {
     mf <- eval.parent(mf)
     ## this is not a `standard' model-fitting function,
     ## so no need to consider contrasts or levels
-    if (stats:::.check_vars_numeric(mf))
+    if (.check_vars_numeric(mf))
         stop("PCA applies only to numerical variables")
     na.act <- attr(mf, "na.action")
     mt <- attr(mf, "terms")
