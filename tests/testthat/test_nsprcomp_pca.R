@@ -68,7 +68,10 @@ test_that("sdev tolerance early stopping", {
     X <- matrix(runif(10*10), 10)
     
     nspc <- nsprcomp(X, tol = 0.3)
-    expect_true(nspc$sdev[length(nspc$sdev)]/nspc$sdev[1] >= 0.3)
+    ncomp <- length(nspc$sdev)
+    expect_true(nspc$sdev[ncomp]/nspc$sdev[1] >= 0.3)
+    expect_true(ncol(nspc$rotation) == ncomp)
+    expect_true(ncol(nspc$q) == ncomp)
 })
 
 test_that("rank of matrix smaller than ncomp", {
@@ -77,6 +80,8 @@ test_that("rank of matrix smaller than ncomp", {
     
     nspc <- nsprcomp(X, ncomp = 3)
     expect_true(length(nspc$sdev) == 1)
+    expect_true(ncol(nspc$rotation) == 1)
+    expect_true(ncol(nspc$q) == 1)
 })
 
 test_that("integer weighted PCA equal to repeated observations", {
@@ -109,4 +114,41 @@ test_that("weighted approximation error", {
     
     nrm <- rowSums((X - X_hat)^2)
     expect_true(which.min(nrm) == 5)
+})
+
+test_that("sequential component computation", {
+    set.seed(1)
+    d <- 5
+    X <- scale(matrix(runif(d*d), d))
+    
+    pc.model <- prcomp(X)
+    nspc.model <- NULL
+    for (pp in seq(d-1)) {
+        nspc.model <- nsprcomp(X, ncomp = pp, em_tol = 1e-10, 
+                               partial_model = nspc.model)
+    }
+    
+    rot_nrm <- norm(abs(nspc.model$rotation) - abs(pc.model$rotation[ ,1:(d-1)]), "F")
+    expect_true(rot_nrm < 1e-3)
+    x_nrm <- norm(abs(nspc.model$x) - abs(pc.model$x[ ,1:(d-1)]), "F")
+    expect_true(x_nrm < 1e-3)
+    sdev_nrm <- sqrt(sum((nspc.model$sdev - pc.model$sdev[1:(d-1)])^2))
+    expect_true(sdev_nrm < 1e-3)
+})
+
+test_that("continuing an early stopped model", {
+    set.seed(1)
+    d <- 10
+    X <- scale(matrix(runif(d*d), d))
+    
+    pc.model <- prcomp(X)
+    nspc.model <- nsprcomp(X, tol = 0.5, em_tol = 1e-10)
+    nspc.model <- nsprcomp(X, em_tol = 1e-10, partial_model = nspc.model)
+    
+    rot_nrm <- norm(abs(nspc.model$rotation) - abs(pc.model$rotation[ ,1:(d-1)]), "F")
+    expect_true(rot_nrm < 1e-3)
+    x_nrm <- norm(abs(nspc.model$x) - abs(pc.model$x[ ,1:(d-1)]), "F")
+    expect_true(x_nrm < 1e-3)
+    sdev_nrm <- sqrt(sum((nspc.model$sdev - pc.model$sdev[1:(d-1)])^2))
+    expect_true(sdev_nrm < 1e-3)
 })

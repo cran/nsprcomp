@@ -2,9 +2,9 @@ Package: nsprcomp
 Authors@R: c( person("Christian", "Sigg", email =
     "christian@sigg-iten.ch", role = c("aut", "cre")), person("R
     Core team", role = "aut"))
-Version: 0.4.1
-Date: 2013-09-22
-Title: Non-Negative Sparse PCA
+Version: 0.5
+Date: 2014-02-03
+Title: Non-Negative and Sparse PCA
 Description: This package implements two methods for performing a constrained
     principal component analysis (PCA), where non-negativity and/or sparsity
     constraints are enforced on the principal axes (PAs). The function
@@ -19,13 +19,11 @@ Description: This package implements two methods for performing a constrained
 URL: http://sigg-iten.ch/research/
 License: GPL (>= 2)
 Imports: stats
-Suggests: MASS, testthat, roxygen2
-Collate: 'asdev.R' 'cardinality.R' 'normv.R' 'nscumcomp.R'
-        'nsprcomp-package.R' 'nsprcomp.R' 'peav.R'
-Packaged: 2013-09-22 19:19:24 UTC; chrsigg
+Suggests: MASS, testthat (>= 0.8), roxygen2
+Packaged: 2014-07-17 18:49:00 UTC; chrsigg
 Author: Christian Sigg [aut, cre],
   R Core team [aut]
 Maintainer: Christian Sigg <christian@sigg-iten.ch>
 NeedsCompilation: no
 Repository: CRAN
-Date/Publication: 2013-09-22 22:52:42
+Date/Publication: 2014-07-17 23:54:11
